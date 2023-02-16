@@ -1,0 +1,71 @@
+version: '3.4'
+services:
+  netbox: &netbox
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      - postgres
+      - redis
+      - redis-cache
+      - netbox-worker
+    env_file: env/netbox.env
+    user: 'unit:root'
+    ports:
+      - "8080:8080"
+    volumes:
+      - data-media-files:/opt/netbox/netbox/media:z
+
+  netbox-worker:
+    <<: *netbox
+    depends_on:
+      - redis
+      - postgres
+    command:
+      - /opt/netbox/venv/bin/python
+      - /opt/netbox/netbox/manage.py
+      - rqworker
+    ports:
+      # Just so we don't bind port 80 twice
+      - "81:81"
+  netbox-housekeeping:
+    <<: *netbox
+    depends_on:
+      - redis
+      - postgres
+    command:
+      - /opt/netbox/housekeeping.sh
+    ports:
+      # Just so we don't bind port 80 twice
+      - "82:82"
+
+  # postgres
+  postgres:
+    image: postgres:14-alpine
+    env_file: env/postgres.env
+    volumes:
+      - data-postgres:/var/lib/postgresql/data
+
+  # redis
+  redis:
+    image: redis:6-alpine
+    command:
+      - sh
+      - -c # this is to evaluate the $REDIS_PASSWORD from the env
+      - redis-server --appendonly yes --requirepass $$REDIS_PASSWORD ## $$ because of docker-compose
+    env_file: env/redis.env
+    volumes:
+      - data-redis:/data
+
+  redis-cache:
+    image: redis:6-alpine
+    command:
+      - sh
+      - -c # this is to evaluate the $REDIS_PASSWORD from the env
+      - redis-server --requirepass $$REDIS_PASSWORD ## $$ because of docker-compose
+    env_file: env/redis.env
+
+volumes:
+  data-redis:
+  data-postgres:
+  data-media-files:
